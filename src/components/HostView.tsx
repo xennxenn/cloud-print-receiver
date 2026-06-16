@@ -108,25 +108,14 @@ export default function HostView({ sessionId, printJobs, shareUrl }: HostViewPro
       {/* Printable Section (hidden on browser screen, visible only when printing) */}
       <AnimatePresence>
         {printingJob && (
-          <div id="print-section" className="hidden fixed inset-0 z-50 bg-white flex-col items-center justify-center p-8 text-black">
-            <div className="max-w-lg w-full flex flex-col items-center border border-dashed border-gray-400 p-6 rounded-md">
-              <div className="text-center mb-6">
-                <h1 className="text-xl font-bold tracking-tight uppercase">Cloud Print Receiver</h1>
-                <p className="text-xs text-gray-500 mt-1">Session: {sessionId}</p>
-                <p className="text-xs text-gray-500">Printed: {new Date().toLocaleString('th-TH')}</p>
-              </div>
-              <div className="relative w-full max-h-[70vh] flex justify-center items-center overflow-hidden mb-4">
-                <img 
-                  src={printingJob.imageData} 
-                  alt="Print Queue Content" 
-                  className="max-w-full max-h-[70vh] object-contain rounded-sm"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-              <div className="w-full border-t border-dashed border-gray-400 pt-4 flex justify-between text-xs text-gray-500">
-                <span>Job ID: {printingJob.id.toUpperCase()}</span>
-                <span>Thank you for using Cloud Print</span>
-              </div>
+          <div id="print-section" className="hidden fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-0 text-black">
+            <div className="w-full h-full flex items-center justify-center overflow-hidden">
+              <img 
+                src={printingJob.imageData} 
+                alt="Print Content" 
+                className="max-w-full max-h-full object-contain"
+                referrerPolicy="no-referrer"
+              />
             </div>
           </div>
         )}

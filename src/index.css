@@ -9,6 +9,9 @@
 
 /* Custom print media queries */
 @media print {
+  @page {
+    margin: 0;
+  }
   body * {
     visibility: hidden !important;
   }
