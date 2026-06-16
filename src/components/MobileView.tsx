@@ -26,6 +26,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [senderName, setSenderName] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -121,6 +122,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
 
     setUploading(true);
     setStatusText('compressing');
+    setUploadError(null);
 
     try {
       // Step 1: Compress picture
@@ -144,9 +146,9 @@ export default function MobileView({ sessionId }: MobileViewProps) {
       });
 
       setStatusText('success');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Upload failed:", error);
-      alert("เกิดข้อผิดพลาดในการส่งรูปภาพ กรุณาลองใหม่อีกครั้ง");
+      setUploadError(error?.message || String(error));
       setStatusText('idle');
       setUploading(false);
     }
@@ -156,6 +158,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
     setSelectedFile(null);
     setPreviewImage(null);
     setStatusText('idle');
+    setUploadError(null);
     setUploading(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -194,7 +197,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
           />
 
           <AnimatePresence mode="wait">
-            {statusText === 'idle' && !previewImage && (
+            {statusText === 'idle' && !previewImage && !uploadError && (
               <motion.div
                 key="dropzone"
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -230,7 +233,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
             )}
 
             {/* Editing/Preview State before pressing Upload */}
-            {previewImage && statusText === 'idle' && (
+            {previewImage && statusText === 'idle' && !uploadError && (
               <motion.div
                 key="preview"
                 initial={{ opacity: 0, y: 15 }}
@@ -361,6 +364,65 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 >
                   เลือกรูปอื่นเพื่อส่งเพิ่ม
                 </button>
+              </motion.div>
+            )}
+
+            {/* Upload Error / Diagnostics Card */}
+            {uploadError && (
+              <motion.div
+                key="error-card"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="flex flex-col items-center py-4 text-center text-rose-600"
+              >
+                <div className="bg-rose-50 text-rose-500 p-4 rounded-full mb-4 border border-rose-100">
+                  <CloudLightning className="w-12 h-12" />
+                </div>
+                
+                <h2 className="text-lg font-bold text-slate-900 mb-1">
+                  เกิดข้อผิดพลาดในการส่งรูปภาพ
+                </h2>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-[260px] mb-4">
+                  ไม่สามารถบันทึกข้อมูลลงฐานข้อมูล Firebase ได้สำเร็จ กรุณาตรวจสอบการตั้งค่าหลักดังนี้:
+                </p>
+
+                <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-2.5 text-xs border border-slate-100 w-full mb-5 text-slate-700">
+                  <div className="font-semibold text-[10px] text-slate-500 uppercase tracking-wider font-mono">
+                    คู่มือตรวจสอบแก้ไขปัญหา (Troubleshooting):
+                  </div>
+                  <div className="space-y-2 text-[11px] leading-relaxed">
+                    <p>
+                      <strong>1. ตั้งค่า Security Rules หรือยัง?</strong><br />
+                      หากข้อผิดพลาดแสดง <code className="font-mono text-rose-600 bg-rose-50 px-1 rounded">permission-denied</code> โปรดนำเนื้อหาของไฟล์ <code className="font-mono bg-slate-200 px-1 rounded text-slate-700">firestore.rules</code> (อยู่บนเครื่อง Host หรือในโปรเจกต์) ไปวางทับ Rules ในหน้า Console ของ Firestore
+                    </p>
+                    <p>
+                      <strong>2. ตาราง/Collection ไม่ถูกเปิดใช้งาน?</strong><br />
+                      เครื่อง Host และเครื่อง Mobile ต้องใช้แอมป์ DB ตัวเดียวกัน และสร้างฐานข้อมูลในโหมด <span className="font-medium text-slate-800">"Native Mode"</span> ในโปรเจกต์ Firebase ของคุณ
+                    </p>
+                    <p>
+                      <strong>ข้อผิดพลาดทางเทคนิค (Raw Error):</strong>
+                      <div className="mt-1 bg-slate-900 text-red-400 p-2 rounded-lg font-mono text-[9px] break-all max-h-20 overflow-y-auto">
+                        {uploadError}
+                      </div>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 w-full">
+                  <button 
+                    onClick={resetSelectors}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-2xl text-xs"
+                  >
+                    เลือกภาพใหม่
+                  </button>
+                  <button 
+                    onClick={handleUpload}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl text-xs shadow-md shadow-blue-500/10 cursor-pointer"
+                  >
+                    ลองใหม่อีกครั้ง
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

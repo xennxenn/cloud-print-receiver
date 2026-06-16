@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "PrintJob": {
+      "title": "PrintJob",
+      "description": "A real-time image printing task submitted by the mobile client to the receiver session",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "The unique host receiver session identifier"
+        },
+        "imageData": {
+          "type": "string",
+          "description": "Base64 encoded JPEG compressed image data to print"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Auto server-generated timestamp of creation"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "printed", "cancelled"],
+          "description": "Current status of the print job"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Optional label or sender name specifying origin"
+        },
+        "fileSize": {
+          "type": "string",
+          "description": "Formated size string of the original image"
+        }
+      },
+      "required": ["sessionId", "imageData", "createdAt", "status"]
+    }
+  },
+  "firestore": {
+    "printJobs/{jobId}": {
+      "schema": "PrintJob",
+      "description": "Collection storing current active print jobs"
+    }
+  }
+}

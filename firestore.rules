@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. Default absolute safety net: deny all unrecognized paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Standard high-reliability helper invariants
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 2. Main PrintJob entity gate
+    match /printJobs/{jobId} {
+      
+      // Strict payload schema sanity check
+      function isValidPrintJob(data) {
+        return data.sessionId is string 
+          && data.sessionId.size() >= 4 
+          && data.sessionId.size() <= 32
+          && data.imageData is string 
+          && data.imageData.size() > 1000 // Ensure valid non-empty data
+          && data.status is string
+          && (data.status == 'pending' || data.status == 'printed' || data.status == 'cancelled')
+          && (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 200))
+          && (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 100));
+      }
+
+      // Read access: allow both get and query listing if signed in
+      allow read: if isSignedIn();
+
+      // Create access: Must be signed in, must conform to the strict schema, and must set creation time correctly
+      allow create: if isSignedIn() 
+        && isValidPrintJob(incoming())
+        && incoming().createdAt == request.time
+        && incoming().status == 'pending';
+
+      // Update access: Allow changing only 'status' field when printing
+      allow update: if isSignedIn()
+        && isValidPrintJob(incoming())
+        && incoming().sessionId == existing().sessionId
+        && incoming().imageData == existing().imageData
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+
+      // Delete access: Allow deletion of print jobs in own session
+      allow delete: if isSignedIn();
+    }
+  }
+}

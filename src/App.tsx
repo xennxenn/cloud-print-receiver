@@ -28,11 +28,18 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string>('');
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSlowOrStuck, setIsSlowOrStuck] = useState<boolean>(false);
 
   // ==========================================
   // 1. Connection Validation & Authentication Setup
   // ==========================================
   useEffect(() => {
+    // Set a timeout to notify user if initialization takes too long
+    const timer = setTimeout(() => {
+      setIsSlowOrStuck(true);
+    }, 6000);
+
     // Check connection as per the Firebase-Integration Skill guidelines
     const checkDbConnection = async () => {
       try {
@@ -54,8 +61,9 @@ export default function App() {
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Firebase Anonymous Auth error:", error);
+        setAuthError(error?.message || String(error));
       }
     };
     initAuth();
@@ -64,11 +72,15 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        clearTimeout(timer);
         determineRoute();
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   // ==========================================
@@ -150,22 +162,65 @@ export default function App() {
   // ==========================================
   if (viewMode === 'loading') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 p-6">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center"
+          className="flex flex-col items-center max-w-md w-full bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50"
         >
-          <div className="relative mb-4">
-            <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Cloud className="w-5 h-5 text-indigo-500 animate-pulse" />
+          {authError || isSlowOrStuck ? (
+            <div className="w-full text-center space-y-4">
+              <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 border border-amber-100 animate-pulse">
+                <Cloud className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-display font-bold text-gray-900">
+                ระบบเชื่อมต่อใช้เวลานานผิดปกติ
+              </h2>
+              <p className="text-xs text-slate-500">
+                เนื่องจากมีการเชื่อมต่อไปยัง Firebase แต่อาจเกิดข้อผิดพลาดในการยืนยันตัวตน (Authentication) หรือติดบั๊กด้านเครือข่าย
+              </p>
+              
+              <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-3 text-xs border border-slate-100">
+                <span className="font-semibold text-slate-700 uppercase tracking-widest block font-mono text-[10px]">
+                  วิธีการแก้ไขที่แนะนำ (Troubleshoot):
+                </span>
+                <ul className="list-decimal list-inside space-y-1.5 text-slate-600 font-sans leading-relaxed text-[11px]">
+                  <li>
+                    <strong className="text-slate-800">เปิด Anonymous Sign-in:</strong> ตรวจสอบว่าคุณได้เปิดใช้งานระบบล็อกอิน "ไม่ระบุตัวตน (Anonymous)" ใน <span className="underline">Firebase Console → Authentication → Sign-in method</span>
+                  </li>
+                  <li>
+                    <strong className="text-slate-800">ตรวจสอบการเชื่อมต่อ:</strong> ตรวจสอบว่าแอปสามารถเข้าถึง Firestore ได้ปกติและพารามิเตอร์คีย์ต่างๆ ถูกต้อง
+                  </li>
+                  <li>
+                    <strong className="text-slate-800">ข้อผิดพลาดที่พบ (Raw Error):</strong>
+                    <div className="mt-1 bg-slate-900 text-red-400 p-2 rounded-lg font-mono text-[10px] break-all max-h-24 overflow-y-auto">
+                      {authError || "Firebase API is loading slow. Please verify your Anonymous Login states & project key validity."}
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl text-xs transition-colors shadow-md shadow-blue-500/10 cursor-pointer"
+              >
+                ลองโหลดหน้าใหม่อีกครั้ง
+              </button>
             </div>
-          </div>
-          <h2 className="text-sm font-semibold tracking-wider text-slate-500 uppercase flex items-center gap-1.5 animate-pulse">
-            <Printer className="w-4 h-4 text-blue-500" />
-            Initializing printer cloud...
-          </h2>
+          ) : (
+            <div className="text-center">
+              <div className="relative mb-4 flex justify-center">
+                <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Cloud className="w-5 h-5 text-indigo-500 animate-pulse" />
+                </div>
+              </div>
+              <h2 className="text-sm font-semibold tracking-wider text-slate-500 uppercase flex items-center justify-center gap-1.5 animate-pulse">
+                <Printer className="w-4 h-4 text-blue-500" />
+                Initializing printer cloud...
+              </h2>
+            </div>
+          )}
         </motion.div>
       </div>
     );
