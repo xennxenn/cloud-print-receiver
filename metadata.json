@@ -1,0 +1,6 @@
+{
+  "name": "Cloud Print Receiver",
+  "description": "Seamless real-time photo receiver for direct browser printing. Scan the QR code to upload photos from a mobile device and print them instantly.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
