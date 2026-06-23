@@ -16,7 +16,7 @@ import {
   doc, 
   getDocFromServer 
 } from 'firebase/firestore';
-import { Loader2, Printer, Cloud } from 'lucide-react';
+import { Loader2, Printer, Cloud, Laptop, Send, ArrowRight, Sparkles } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { PrintJob, ViewMode } from './types';
 import HostView from './components/HostView';
@@ -26,6 +26,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('loading');
   const [sessionId, setSessionId] = useState<string>('');
+  const [enteredSessionId, setEnteredSessionId] = useState<string>('');
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -94,16 +95,30 @@ export default function App() {
       setSessionId(sessionFromUrl);
       setViewMode('mobile');
     } else {
-      // Host side: persist Session ID so browser refreshes do not clear queue list
-      let hostSession = localStorage.getItem('cloud_print_host_session');
-      if (!hostSession) {
-        // Generate robust 8-character unique alphanumeric code
-        hostSession = Math.random().toString(36).substring(2, 10).toUpperCase();
-        localStorage.setItem('cloud_print_host_session', hostSession);
-      }
-      setSessionId(hostSession);
-      setViewMode('host');
+      // By default let them choose!
+      setViewMode('home');
     }
+  };
+
+  const startHostMode = () => {
+    let hostSession = localStorage.getItem('cloud_print_host_session');
+    if (!hostSession) {
+      // Generate robust 8-character unique alphanumeric code
+      hostSession = Math.random().toString(36).substring(2, 10).toUpperCase();
+      localStorage.setItem('cloud_print_host_session', hostSession);
+    }
+    setSessionId(hostSession);
+    setViewMode('host');
+  };
+
+  const startSendMode = (id: string) => {
+    const sanitizedId = id.trim().toUpperCase();
+    if (!sanitizedId || sanitizedId.length < 4) {
+      alert('กรุณากรอกรหัส Session ID 4 ตัวขึ้นไปครับ (ตัวอย่าง: ZRSAZ778)');
+      return;
+    }
+    setSessionId(sanitizedId);
+    setViewMode('mobile');
   };
 
   // ==========================================
@@ -127,7 +142,9 @@ export default function App() {
             createdAt: data.createdAt,
             status: data.status || 'pending',
             fileName: data.fileName,
-            fileSize: data.fileSize
+            fileSize: data.fileSize,
+            fileType: data.fileType || 'image',
+            mimeType: data.mimeType || 'image/jpeg'
           });
         }
       });
@@ -226,6 +243,111 @@ export default function App() {
     );
   }
 
+  // Choice landing selector for custom splits
+  if (viewMode === 'home') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 font-sans">
+        <div className="max-w-4xl w-full text-center space-y-4 mb-10">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-600 px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+            Cloud Print & File Transfer
+          </motion.div>
+          
+          <motion.h1 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-4xl sm:text-5xl font-display font-extrabold text-slate-900 tracking-tight leading-tight"
+          >
+            ระบบ ส่ง-รับ รูปภาพและไฟล์เรียลไทม์
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-slate-500 text-sm sm:text-base max-w-2xl mx-auto"
+          >
+            เลือกโหมดทำงานเพื่อง่ายต่อการพิมพ์รูปภาพหรือโอนย้ายไฟล์เอกสารผ่านคลาวด์แบบทันใจ
+          </motion.p>
+        </div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl w-full"
+        >
+          {/* Card 1: Receiver */}
+          <div className="bg-white rounded-3xl border border-slate-100 p-6 sm:p-8 shadow-xl shadow-slate-200/40 flex flex-col justify-between hover:border-blue-200/80 transition-all duration-300 transform hover:-translate-y-1">
+            <div className="space-y-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+                <Laptop className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-display font-bold text-gray-900">
+                เครื่องรับ (Receiver Console)
+              </h2>
+              <p className="text-slate-500 text-xs sm:text-sm leading-relaxed">
+                ทำหน้าที่เป็นศูนย์กลางคิวรับงานพิมพ์ เฝ้าสังเกตและรับภาพ/ไฟล์ที่ถูกส่งมาแบบเรียลไทม์เพื่อดาวน์โหลดหรือสั่งปริ้น เหมาะอย่างยิ่งสำหรับคอมพิวเตอร์หลักที่ต่อเครื่องพิมพ์
+              </p>
+            </div>
+            
+            <button
+              onClick={startHostMode}
+              className="mt-8 w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-4 px-6 rounded-2xl text-sm transition-all duration-200 shadow-lg shadow-slate-900/10 hover:shadow-slate-800/20 flex items-center justify-center gap-1.5 cursor-pointer group"
+            >
+              เปิดหน้าเครื่องรับหลัก
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+
+          {/* Card 2: Sender */}
+          <div className="bg-white rounded-3xl border border-slate-100 p-6 sm:p-8 shadow-xl shadow-slate-200/40 flex flex-col justify-between hover:border-indigo-200/80 transition-all duration-300 transform hover:-translate-y-1">
+            <div className="space-y-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+                <Send className="w-6 h-6" />
+              </div>
+              <h2 className="text-2xl font-display font-bold text-gray-900">
+                เครื่องส่ง (Sender Mode)
+              </h2>
+              <p className="text-slate-500 text-xs sm:text-sm leading-relaxed">
+                อัปโหลด ส่งรูปภาพ หรือไฟล์เอกสารต่างๆ (เช่น PDF, Word, XLS, ZIP) ข้ามเครือข่ายไปยังห้องรับเป้าหมายได้โดยตรงจากเครื่องนี้ โดยการกรอกรหัสห้อง (Session ID)
+              </p>
+
+              {/* Action input for specific Session ID */}
+              <div className="pt-4 space-y-2">
+                <label className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
+                  กรอกรหัสห้องเครื่องรับ (Session ID)
+                </label>
+                <input 
+                  type="text"
+                  placeholder="เช่น ZRSAZ778"
+                  value={enteredSessionId}
+                  onChange={(e) => setEnteredSessionId(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') startSendMode(enteredSessionId);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 font-mono text-center placeholder:font-sans placeholder:text-gray-400 font-medium"
+                />
+              </div>
+            </div>
+            
+            <button
+              onClick={() => startSendMode(enteredSessionId)}
+              className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 px-6 rounded-2xl text-sm transition-all duration-200 shadow-lg shadow-indigo-600/10 hover:shadow-indigo-700/20 flex items-center justify-center gap-1.5 cursor-pointer group"
+            >
+              เข้าสู่หน้าจอการส่ง
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 selection:bg-blue-500 selection:text-white transition-colors duration-200">
       <AnimatePresence mode="wait">
@@ -241,6 +363,7 @@ export default function App() {
               sessionId={sessionId} 
               printJobs={printJobs} 
               shareUrl={shareUrl} 
+              onBackToHome={() => setViewMode('home')}
             />
           </motion.div>
         ) : (
@@ -253,6 +376,7 @@ export default function App() {
           >
             <MobileView 
               sessionId={sessionId} 
+              onBackToHome={() => setViewMode('home')}
             />
           </motion.div>
         )}

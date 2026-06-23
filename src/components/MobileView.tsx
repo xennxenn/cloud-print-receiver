@@ -10,16 +10,41 @@ import {
   Sparkles,
   CloudLightning,
   User,
-  ArrowRight
+  ArrowRight,
+  File,
+  FileText,
+  FileArchive,
+  ArrowLeft,
+  Home
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface MobileViewProps {
   sessionId: string;
+  onBackToHome?: () => void;
 }
 
-export default function MobileView({ sessionId }: MobileViewProps) {
+const getFileTypeCategory = (mime: string, name: string): 'image' | 'document' | 'other' => {
+  if (mime.startsWith('image/')) return 'image';
+  const docExtensions = ['.pdf', '.txt', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.rtf'];
+  const nameLower = name.toLowerCase();
+  const isDocExtension = docExtensions.some(ext => nameLower.endsWith(ext));
+  if (
+    mime.startsWith('text/') || 
+    mime.includes('pdf') || 
+    mime.includes('word') || 
+    mime.includes('excel') || 
+    mime.includes('spreadsheet') || 
+    mime.includes('presentation') || 
+    isDocExtension
+  ) {
+    return 'document';
+  }
+  return 'other';
+};
+
+export default function MobileView({ sessionId, onBackToHome }: MobileViewProps) {
   const [uploading, setUploading] = useState(false);
   const [statusText, setStatusText] = useState<'idle' | 'compressing' | 'uploading' | 'success'>('idle');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -67,18 +92,29 @@ export default function MobileView({ sessionId }: MobileViewProps) {
   };
 
   const processSelectedFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      alert('กรุณาเลือกไฟล์รูปภาพเท่านั้นครับ');
+    // Check maximum database size limit (750KB) to ensure high reliability
+    if (file.size > 750 * 1024) {
+      alert('ขนาดไฟล์ใหญ่เกินไป! เพื่อให้จัดส่งได้เสถียรผ่านระบบคลาวด์ โปรดเลือกไฟล์ที่มีขนาดไม่เกิน 750 KB ครับ');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
+    
     setSelectedFile(file);
 
-    // Create local preview
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setPreviewImage(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    const isImg = file.type.startsWith('image/');
+    if (isImg) {
+      // Create local preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPreviewImage(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // For general documents we don't have a visual image preview, set custom tag
+      setPreviewImage('FILE_PLACEHOLDER');
+    }
   };
 
   const compressImage = (file: File): Promise<string> => {
@@ -117,6 +153,15 @@ export default function MobileView({ sessionId }: MobileViewProps) {
     });
   };
 
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) return;
 
@@ -125,24 +170,32 @@ export default function MobileView({ sessionId }: MobileViewProps) {
     setUploadError(null);
 
     try {
-      // Step 1: Compress picture
-      const base64Image = await compressImage(selectedFile);
+      const isImg = selectedFile.type.startsWith('image/');
+      let base64Data = '';
       
-      // Step 2: Upload to firestore
+      if (isImg) {
+        setStatusText('compressing');
+        base64Data = await compressImage(selectedFile);
+      } else {
+        setStatusText('uploading');
+        base64Data = await readFileAsBase64(selectedFile);
+      }
+      
       setStatusText('uploading');
       
-      const fileLabel = senderName.trim() 
-        ? `ส่งโดย: ${senderName.trim()}` 
-        : `มือถือ (${selectedFile.name})`;
+      const fileCategory = getFileTypeCategory(selectedFile.type, selectedFile.name);
 
       const jobsRef = collection(db, 'printJobs');
       await addDoc(jobsRef, {
         sessionId: sessionId,
-        imageData: base64Image,
+        imageData: base64Data, // This safely acts as general file payload Base64
         createdAt: serverTimestamp(),
         status: 'pending',
-        fileName: fileLabel,
-        fileSize: formatBytes(selectedFile.size)
+        fileName: selectedFile.name, // Record the ACTUAL clean filename! Great for downloading and printing!
+        fileSize: formatBytes(selectedFile.size),
+        fileType: fileCategory,
+        mimeType: selectedFile.type || 'application/octet-stream',
+        senderName: senderName.trim() || 'นิรนาม'
       });
 
       setStatusText('success');
@@ -166,16 +219,26 @@ export default function MobileView({ sessionId }: MobileViewProps) {
   };
 
   return (
-    <div className="max-w-md mx-auto bg-slate-50 min-h-screen shadow-2xl flex flex-col justify-between">
+    <div className="max-w-md mx-auto bg-slate-50 min-h-screen shadow-2xl flex flex-col justify-between relative">
       {/* Phone View Header */}
-      <header className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-6 rounded-b-[2.5rem] shadow-lg shadow-blue-500/10 text-center relative overflow-hidden">
+      <header className="bg-gradient-to-br from-indigo-600 to-blue-700 text-white p-6 rounded-b-[2.5rem] shadow-lg shadow-indigo-500/10 text-center relative overflow-hidden">
         {/* Decorative dynamic circles */}
         <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/5 rounded-full blur-xl" />
         <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-white/10 rounded-full blur-xl" />
         
-        <Smartphone className="w-12 h-12 mb-3 mx-auto text-blue-100" />
-        <h1 className="text-2xl font-display font-bold tracking-tight">ส่งรูปลงเครื่องปริ้น</h1>
-        <p className="text-blue-100/80 text-sm mt-1">อัปโหลดภาพด่วนจากสมาร์ทโฟนของคุณ</p>
+        {onBackToHome && (
+          <button 
+            onClick={onBackToHome}
+            className="absolute top-4 left-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-xl transition duration-200 cursor-pointer flex items-center gap-1"
+            title="กลับไปหน้าหลัก"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        )}
+
+        <Smartphone className="w-12 h-12 mb-3 mx-auto text-indigo-100" />
+        <h1 className="text-2xl font-display font-bold tracking-tight">เครื่องส่งไฟล์และรูปภาพ</h1>
+        <p className="text-indigo-100/80 text-xs mt-1">อัปโหลดภาพด่วนหรือไฟล์เอกสารไปยังเครื่องรับ</p>
 
         {/* Info panel showing connection status */}
         <div className="mt-4 inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full text-xs font-mono">
@@ -189,7 +252,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
         <div className="w-full bg-white rounded-3xl shadow-xl border border-gray-100/80 p-6 sm:p-8">
           <input 
             type="file" 
-            accept="image/*" 
+            accept="*/*" 
             className="hidden" 
             ref={fileInputRef}
             onChange={handleFileChange}
@@ -209,25 +272,25 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 onDrop={handleDrop}
                 className={`border-2 border-dashed rounded-2xl p-6 text-center select-none cursor-pointer transition-all duration-300 ${
                   isDragging 
-                    ? 'border-blue-500 bg-blue-50/50 scale-[1.01]' 
-                    : 'border-slate-200 hover:border-blue-400 bg-slate-50/50 hover:bg-slate-50'
+                    ? 'border-indigo-500 bg-indigo-50/50 scale-[1.01]' 
+                    : 'border-slate-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-slate-50'
                 }`}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <div className="w-16 h-16 bg-blue-500/5 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100">
+                <div className="w-16 h-16 bg-indigo-500/5 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-indigo-100">
                   <Upload className="w-7 h-7" />
                 </div>
                 
                 <h3 className="text-base font-semibold text-slate-800 mb-1">
-                  แตะเพื่อถ่ายรูป หรือ เลือกรูปภาพ
+                  เลือกไฟล์รูปร่างหรือไฟล์เอกสาร
                 </h3>
                 <p className="text-xs text-slate-400 max-w-[240px] mx-auto leading-relaxed">
-                  รองรับการลากไฟล์รูปภาพมาวางได้โดยตรง ระบบบีบอัดความละเอียดอัตโนมัติ
+                  รองรับการลากไฟล์เอกสาร (PDF, Txt, Docs) หรือรูปภาพมาวางได้โดยตรง (ขนาดสูงสุด 750 KB)
                 </p>
 
                 <div className="mt-5 inline-flex items-center gap-1.5 bg-white border border-slate-100 shadow-sm px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-700">
-                  <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-                  Select Image File
+                  <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
+                  อัปโหลดรูปภาพและไฟล์
                 </div>
               </motion.div>
             )}
@@ -242,20 +305,42 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 className="space-y-5"
               >
                 {/* Crop or View container */}
-                <div className="relative aspect-[4/3] bg-slate-900 rounded-2xl overflow-hidden shadow-inner border border-slate-100">
-                  <img 
-                    src={previewImage} 
-                    alt="Current file selection"
-                    className="w-full h-full object-contain"
-                    referrerPolicy="no-referrer"
-                  />
+                <div className="relative aspect-[4/3] bg-slate-900 rounded-2xl overflow-hidden shadow-inner border border-slate-800 flex items-center justify-center p-6">
+                  {previewImage === 'FILE_PLACEHOLDER' ? (
+                    <div className="flex flex-col items-center text-center text-slate-300">
+                      <div className="w-20 h-20 bg-slate-800 rounded-2xl border border-slate-700 flex items-center justify-center text-indigo-400 mb-3 shadow-lg">
+                        {selectedFile?.name.endsWith('.pdf') ? (
+                          <FileText className="w-10 h-10 text-rose-400" />
+                        ) : selectedFile?.name.match(/\.(zip|rar|tar|gz)$/) ? (
+                          <FileArchive className="w-10 h-10 text-amber-400" />
+                        ) : (
+                          <File className="w-10 h-10 text-sky-400" />
+                        )}
+                      </div>
+                      <span className="text-sm font-semibold max-w-[220px] truncate text-white block">
+                        {selectedFile?.name}
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1 block">
+                        ไฟล์รูปแบบ {selectedFile?.type || 'ไม่ระบุประเภท'}
+                      </span>
+                    </div>
+                  ) : (
+                    <img 
+                      src={previewImage} 
+                      alt="Current file selection"
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+
                   <button
                     onClick={resetSelectors}
-                    className="absolute top-3 right-3 bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl transition-colors shadow-lg shadow-rose-500/20"
-                    title="ยกเลิกภาพนี้"
+                    className="absolute top-3 right-3 bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl transition-colors shadow-lg shadow-rose-500/20 cursor-pointer"
+                    title="ยกเลิกไฟล์นี้"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+
                   {selectedFile && (
                     <div className="absolute bottom-3 left-3 bg-slate-950/70 backdrop-blur-md text-white text-[10px] font-mono px-2.5 py-1 rounded-lg">
                       {formatBytes(selectedFile.size)}
@@ -266,7 +351,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 {/* Caption / Sender Name form */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
-                    เพิ่มชื่อของคุณ (ทางเลือก)
+                    ระบุชื่อผู้ส่ง (ทางเลือก)
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -274,11 +359,11 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                     </div>
                     <input 
                       type="text" 
-                      placeholder="ใส่ชื่อหรือข้อความกำกับรูปภาพ..." 
+                      placeholder="ใส่ชื่อผู้ส่งของคุณ..." 
                       value={senderName}
                       onChange={(e) => setSenderName(e.target.value)}
                       maxLength={40}
-                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
                     />
                   </div>
                 </div>
@@ -287,15 +372,15 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 <div className="flex gap-3 pt-1">
                   <button 
                     onClick={resetSelectors}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-2xl text-sm transition-all focus:outline-none"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-2xl text-sm transition-all focus:outline-none cursor-pointer"
                   >
-                    เปลี่ยนรูปใหม่
+                    เปลี่ยนไฟล์
                   </button>
                   <button 
                     onClick={handleUpload}
-                    className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-md shadow-blue-600/10 active:scale-95 transition-all flex items-center justify-center gap-1.5 focus:outline-none"
+                    className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-md shadow-indigo-600/10 active:scale-95 transition-all flex items-center justify-center gap-1.5 focus:outline-none cursor-pointer"
                   >
-                    ส่งภาพทันที <ArrowRight className="w-4 h-4" />
+                    ส่งไฟล์ทันที <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>
@@ -311,14 +396,16 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 className="flex flex-col items-center py-8 text-center"
               >
                 <div className="relative mb-5">
-                  <Loader2 className="animate-spin w-14 h-14 text-blue-500" />
+                  <Loader2 className="animate-spin w-14 h-14 text-indigo-500" />
                   <div className="absolute inset-0 flex items-center justify-center">
                     <Sparkles className="w-5 h-5 text-indigo-500 animate-pulse" />
                   </div>
                 </div>
 
                 <h3 className="text-lg font-semibold text-slate-800">
-                  {statusText === 'compressing' ? 'ระบบกำลังบีบอัดรูปภาพ...' : 'กำลังส่งรูปภาพไปยัง Receiver...'}
+                  {statusText === 'compressing' 
+                    ? (selectedFile?.type.startsWith('image/') ? 'ระบบกำลังบีบอัดรูปภาพ...' : 'เตรียมไฟล์เพื่อส่ง...') 
+                    : (selectedFile?.type.startsWith('image/') ? 'กำลังส่งรูปภาพไปยัง Receiver...' : 'กำลังส่งไฟล์ไปยัง Receiver...')}
                 </h3>
                 <p className="text-xs text-slate-400 mt-1 max-w-[220px]">
                   {statusText === 'compressing' 
@@ -329,7 +416,7 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 {/* Simulated bar progress indicators */}
                 <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-6 max-w-xs">
                   <motion.div 
-                    className="h-full bg-blue-600"
+                    className="h-full bg-indigo-600"
                     initial={{ width: '0%' }}
                     animate={{ width: statusText === 'compressing' ? '40%' : '85%' }}
                     transition={{ duration: 1.5, ease: 'easeOut' }}
@@ -352,17 +439,17 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 </div>
                 
                 <h2 className="text-xl font-bold text-slate-900 mb-1">
-                  ส่งรูปภาพสำเร็จแล้ว!
+                  อัปโหลดส่งไฟล์สำเร็จแล้ว!
                 </h2>
-                <p className="text-xs text-slate-500 leading-relaxed max-w-[240px] mb-6">
-                  รูปของคุณได้ไปปรากฏอยู่บนหน้าจอคอมพิวเตอร์และคิวพิมพ์เรียบร้อยแล้ว
+                <p className="text-xs text-slate-500 leading-relaxed max-w-[240px] mb-6 font-sans">
+                  ไฟล์ของคุณได้ไปส่งมอบแสดงบนหน้าจอคิวพิมพ์และระบบเครื่องรับหลักเรียบร้อยแล้ว
                 </p>
 
                 <button 
                   onClick={resetSelectors}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-md shadow-emerald-600/10 active:scale-95 transition-all"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-md shadow-emerald-600/10 active:scale-95 transition-all cursor-pointer"
                 >
-                  เลือกรูปอื่นเพื่อส่งเพิ่ม
+                  เลือกส่งไฟล์เพิ่มเติม
                 </button>
               </motion.div>
             )}
@@ -381,10 +468,10 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 </div>
                 
                 <h2 className="text-lg font-bold text-slate-900 mb-1">
-                  เกิดข้อผิดพลาดในการส่งรูปภาพ
+                  เกิดข้อผิดพลาดในการส่งข้อมูล
                 </h2>
                 <p className="text-xs text-slate-500 leading-relaxed max-w-[260px] mb-4">
-                  ไม่สามารถบันทึกข้อมูลลงฐานข้อมูล Firebase ได้สำเร็จ กรุณาตรวจสอบการตั้งค่าหลักดังนี้:
+                  ไม่สามารถบันทึกข้อมูลลงฐานข้อมูล Firebase ได้สำเร็จ กรุณาตรวจสอบและแก้ปัญหาดังนี้:
                 </p>
 
                 <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-2.5 text-xs border border-slate-100 w-full mb-5 text-slate-700">
@@ -394,11 +481,11 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                   <div className="space-y-2 text-[11px] leading-relaxed">
                     <p>
                       <strong>1. ตั้งค่า Security Rules หรือยัง?</strong><br />
-                      หากข้อผิดพลาดแสดง <code className="font-mono text-rose-600 bg-rose-50 px-1 rounded">permission-denied</code> โปรดนำเนื้อหาของไฟล์ <code className="font-mono bg-slate-200 px-1 rounded text-slate-700">firestore.rules</code> (อยู่บนเครื่อง Host หรือในโปรเจกต์) ไปวางทับ Rules ในหน้า Console ของ Firestore
+                      หากระบุ <code className="font-mono text-rose-600 bg-rose-50 px-1 rounded">permission-denied</code> โปรดทับไฟล์ <code className="font-mono bg-slate-200 px-1 rounded text-slate-700">firestore.rules</code> ใหม่ใน Firebase คอนโซล เพื่อรองรับโครงสร้างข้อมูลที่ปรับปรุงขึ้นใหม่
                     </p>
                     <p>
-                      <strong>2. ตาราง/Collection ไม่ถูกเปิดใช้งาน?</strong><br />
-                      เครื่อง Host และเครื่อง Mobile ต้องใช้แอมป์ DB ตัวเดียวกัน และสร้างฐานข้อมูลในโหมด <span className="font-medium text-slate-800">"Native Mode"</span> ในโปรเจกต์ Firebase ของคุณ
+                      <strong>2. ตาราง/Collection ไม่ทำงานร่วมกัน?</strong><br />
+                      เช็คให้แน่ใจว่าทั้งเครื่องส่งและเครื่องรับหันไปเชื่อมต่อระบบฐานข้อมูลตัวเดียวกัน
                     </p>
                     <p>
                       <strong>ข้อผิดพลาดทางเทคนิค (Raw Error):</strong>
@@ -412,9 +499,9 @@ export default function MobileView({ sessionId }: MobileViewProps) {
                 <div className="flex gap-2 w-full">
                   <button 
                     onClick={resetSelectors}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-2xl text-xs"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-2xl text-xs cursor-pointer"
                   >
-                    เลือกภาพใหม่
+                    เลือกไฟล์อื่นใหม่
                   </button>
                   <button 
                     onClick={handleUpload}
@@ -436,3 +523,4 @@ export default function MobileView({ sessionId }: MobileViewProps) {
     </div>
   );
 }
+

@@ -30,6 +30,15 @@
         "fileSize": {
           "type": "string",
           "description": "Formated size string of the original image"
+        },
+        "fileType": {
+          "type": "string",
+          "enum": ["image", "document", "other"],
+          "description": "Categorized file helper type"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "Original MIME type of the file"
         }
       },
       "required": ["sessionId", "imageData", "createdAt", "status"]

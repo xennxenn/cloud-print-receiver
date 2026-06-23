@@ -33,11 +33,13 @@ service cloud.firestore {
           && data.sessionId.size() >= 4 
           && data.sessionId.size() <= 32
           && data.imageData is string 
-          && data.imageData.size() > 1000 // Ensure valid non-empty data
+          && data.imageData.size() >= 1 // Allow non-empty content
           && data.status is string
           && (data.status == 'pending' || data.status == 'printed' || data.status == 'cancelled')
-          && (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 200))
-          && (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 100));
+          && (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 256))
+          && (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 100))
+          && (!('fileType' in data) || (data.fileType is string && (data.fileType == 'image' || data.fileType == 'document' || data.fileType == 'other')))
+          && (!('mimeType' in data) || (data.mimeType is string && data.mimeType.size() <= 150));
       }
 
       // Read access: allow both get and query listing if signed in
