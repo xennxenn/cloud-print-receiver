@@ -171,6 +171,16 @@ export default function MobileView({ sessionId, onBackToHome, onSessionChange }:
     });
   };
 
+  // Convert Blob to Base64 Data URL for zero-dependency seamless fallback
+  const blobToDataUrl = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(blob);
+    });
+  };
+
   // Upload file with XHR for accurate 0-100% progress up to 200MB
   const uploadFileToServer = (fileToUpload: Blob | File, originalFilename: string): Promise<any> => {
     return new Promise((resolve, reject) => {
@@ -192,20 +202,24 @@ export default function MobileView({ sessionId, onBackToHome, onSessionChange }:
             const response = JSON.parse(xhr.responseText);
             resolve(response);
           } catch (e) {
-            reject(new Error('Invalid response from server'));
+            reject(new Error('เซิร์ฟเวอร์ตอบกลับรูปแบบข้อมูลไม่ถูกต้อง'));
           }
         } else {
           try {
             const errRes = JSON.parse(xhr.responseText);
-            reject(new Error(errRes.error || `Upload failed with status ${xhr.status}`));
+            reject(new Error(errRes.error || `อัปโหลดไม่สำเร็จ (สถานะ HTTP: ${xhr.status})`));
           } catch (e) {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
+            reject(new Error(`อัปโหลดไม่สำเร็จ (สถานะ HTTP: ${xhr.status})`));
           }
         }
       };
 
-      xhr.onerror = () => reject(new Error('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่ายระหว่างอัปโหลด'));
-      xhr.open('POST', '/api/upload', true);
+      xhr.onerror = () => reject(new Error('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่ออัปโหลดไฟล์ได้'));
+      
+      const targetEndpoint = typeof window !== 'undefined' && window.location.origin 
+        ? `${window.location.origin}/api/upload` 
+        : '/api/upload';
+      xhr.open('POST', targetEndpoint, true);
       xhr.send(formData);
     });
   };
@@ -226,8 +240,41 @@ export default function MobileView({ sessionId, onBackToHome, onSessionChange }:
         fileToSend = await compressImage(selectedFile);
       }
 
-      // Step 1: Upload to Server (Supports up to 200MB)
-      const uploadResult = await uploadFileToServer(fileToSend, selectedFile.name);
+      let fileDataUrlOrPath = '';
+
+      // Step 1: Upload to Server (Supports up to 200MB) with auto-fallback for smaller files
+      try {
+        const uploadResult = await uploadFileToServer(fileToSend, selectedFile.name);
+        fileDataUrlOrPath = uploadResult.fileUrl;
+      } catch (uploadErr: any) {
+        console.warn('Server upload failed, evaluating fallback:', uploadErr);
+
+        // Fallback for files and images that can fit in Firestore document (<850KB)
+        let fallbackBlob: Blob | null = null;
+        if (fileToSend.size <= 850 * 1024) {
+          fallbackBlob = fileToSend;
+        } else if (selectedFile.type.startsWith('image/')) {
+          try {
+            fallbackBlob = await compressImage(selectedFile);
+          } catch (compErr) {
+            console.warn('Fallback compression failed:', compErr);
+          }
+        }
+
+        if (fallbackBlob && fallbackBlob.size <= 900 * 1024) {
+          // Seamless direct transfer to receiver without failing
+          fileDataUrlOrPath = await blobToDataUrl(fallbackBlob);
+        } else {
+          // Re-throw with clear explanation for user
+          const msg = uploadErr?.message || '';
+          if (msg.includes('404')) {
+            throw new Error('ไม่พบบริการอัปโหลดบนเซิร์ฟเวอร์ (404) เซิร์ฟเวอร์กำลังรีสตาร์ต กรุณากดลองอีกครั้ง');
+          } else if (msg.includes('413')) {
+            throw new Error('ขนาดไฟล์เกินข้อจำกัดของระบบ (สูงสุด 200MB)');
+          }
+          throw uploadErr;
+        }
+      }
       
       // Step 2: Register in Firestore Realtime Queue
       setStatusText('saving');
@@ -236,7 +283,7 @@ export default function MobileView({ sessionId, onBackToHome, onSessionChange }:
       
       await addDoc(jobsRef, {
         sessionId: sessionId,
-        imageData: uploadResult.fileUrl, // Store file URL to be accessed by receiver
+        imageData: fileDataUrlOrPath, // Store file stream URL or Data URL
         createdAt: serverTimestamp(),
         status: 'pending',
         fileName: selectedFile.name,
@@ -249,7 +296,7 @@ export default function MobileView({ sessionId, onBackToHome, onSessionChange }:
       setStatusText('success');
     } catch (error: any) {
       console.error("Upload failed:", error);
-      setUploadError(error?.message || String(error));
+      setUploadError(error?.message || 'เกิดข้อผิดพลาดในการส่งข้อมูล');
       setStatusText('idle');
       setUploading(false);
     }
